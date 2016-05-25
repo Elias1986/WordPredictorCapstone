@@ -1,0 +1,110 @@
+Swift Key - Exploring Data
+========================================================
+author: Elias Castaneda O.
+date: May 13th, 2016
+
+Sampling Data
+========================================================
+
+```{r, echo=TRUE}
+
+samplefile <- function(filename, fraction) {
+  system(paste("perl -ne 'print if (rand() < ",
+               fraction, ")'", filename), intern=TRUE)
+}
+
+bsample <- samplefile("~/Desktop/Capstone/en_US/en_US.blogs.txt", .1)
+nsample <- samplefile("~/Desktop/Capstone/en_US/en_US.news.txt", .1)
+tsample <- samplefile("~/Desktop/Capstone/en_US/en_US.twitter.txt",.1)
+totalsample <- c(bsample,nsample,tsample)
+
+```
+
+Clean Samples
+========================================================
+
+```{r, echo=TRUE}
+library("tm")
+library("quanteda")
+
+tdm_2 <- dfm(totalsample, ngrams = 2, concatenator = " ")
+tdm_3 <- dfm(totalsample, ngrams = 3, concatenator = " ")
+tdm_4 <- dfm(totalsample, ngrams = 4, concatenator = " ")
+
+
+```
+
+Analysis of words 1 word, 2 & 3 words
+========================================================
+
+
+```{r, echo=TRUE}
+
+library("RWeka")
+library(data.table)
+
+freq_2 <- colSums(tdm_2)
+freq_2 <- sort(freq_2, decreasing=TRUE)
+freq_2 <- as.data.table(freq_2,  keep.rownames=T)
+colnames(freq_2) <- c("word","freq")
+freq_2 <- subset(freq_2, freq>8) 
+
+freq_3 <- colSums(tdm_3)
+freq_3 <- sort(freq_3, decreasing=TRUE)
+freq_3 <- as.data.table(freq_3,  keep.rownames=T)
+colnames(freq_3) <- c("word","freq")
+freq_3 <- subset(freq_3, freq>6)
+
+freq_4 <- colSums(tdm_4)
+freq_4 <- sort(freq_4, decreasing=TRUE)
+freq_4 <- as.data.table(freq_4,  keep.rownames=T)
+colnames(freq_4) <- c("word","freq")
+freq_4 <- subset(freq_4, freq>4)
+
+```
+
+Input into database
+========================================================
+
+
+```{r, echo=TRUE}
+library(RSQLite)
+library(sqldf)
+
+db <- dbConnect(SQLite(), dbname="test.db")
+dbSendQuery(conn=db,
+            "CREATE TABLE NGram
+            (pre TEXT,
+            word TEXT,
+            freq INTEGER,
+            n INTEGER)") 
+
+pG <- function(dt) {
+  
+  dt[, c("pre", "cur"):=list(unlist(strsplit(word, "[ ]+?[a-z]+$")), 
+                             unlist(strsplit(word, "^([a-z]+[ ])+"))[2]), 
+     by=word]
+}
+
+instodb <- function(sql, key_counts)
+{
+  dbBegin(db)
+  dbGetPreparedQuery(db, sql, bind.data = key_counts)
+  dbCommit(db)
+}
+
+freqc2 <- pG(freq_2)
+freqc3 <- pG(freq_3)
+freqc4 <- pG(freq_4)
+
+sql2 <- "INSERT INTO NGram VALUES ($pre, $cur, $freq, 2)"
+instodb(sql2, freqc2)
+sql3 <- "INSERT INTO NGram VALUES ($pre, $cur, $freq, 3)"
+instodb(sql3, freqc3)
+sql4 <- "INSERT INTO NGram VALUES ($pre, $cur, $freq, 4)"
+instodb(sql4, freqc4)
+
+
+dbDisconnect(db)
+
+```
